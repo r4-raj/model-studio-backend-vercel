@@ -112,20 +112,26 @@ export const generateImage = async (req, res) => {
       "head to knees",
       "closeup",
     ];
+    const isBlouseZoomPose =
+      poseText.toLowerCase().includes("blouse") &&
+      poseText.toLowerCase().includes("zoom");
+
     // Detect mirror adjustment pose safely
     const isMirrorPose = poseText.toLowerCase().includes("mirror");
     const isKitchenLaptop =
       poseText.toLowerCase().includes("laptop") ||
       poseText.toLowerCase().includes("working on laptop");
-      const isKitchenCooking =
-  poseText.toLowerCase().includes("kitchen cooking") ||
-  poseText.toLowerCase().includes("chopping") ||
-  poseText.toLowerCase().includes("cutting vegetables");
-  const isKitchenCoffee =
-  poseText.toLowerCase().includes("coffee") ||
-  poseText.toLowerCase().includes("tea") ||
-  poseText.toLowerCase().includes("holding cup") ||
-  poseText.toLowerCase().includes("kitchen coffee");
+    const isKitchenCooking =
+      poseText.toLowerCase().includes("kitchen cooking") ||
+      poseText.toLowerCase().includes("chopping") ||
+      poseText.toLowerCase().includes("cutting vegetables");
+    const isKitchenCoffee =
+      poseText.toLowerCase().includes("coffee") ||
+      poseText.toLowerCase().includes("tea") ||
+      poseText.toLowerCase().includes("holding cup") ||
+      poseText.toLowerCase().includes("kitchen coffee");
+
+    // NEW: Detect Blouse Zoom Pose
 
     const isZoom = zoomKeywords.some((kw) =>
       poseText.toLowerCase().includes(kw)
@@ -187,6 +193,7 @@ export const generateImage = async (req, res) => {
     /* -------------------- Prompt Assembly -------------------- */
     const promptParts = [];
 
+
     if (HARD_STRICT_MODE) {
       promptParts.push("!!! STRICT MODE ENABLED. FOLLOW ALL RULES EXACTLY.");
     }
@@ -214,8 +221,7 @@ If pose does not match, image is INVALID.
       "SECOND image (if provided) is ONLY for back-side saree reference.",
       "Do NOT add text, logos, watermarks, or extra people.",
       "Do NOT distort anatomy or fabric geometry.",
-      `Allowed changes: ${
-        changedFields.length ? changedFields.join(", ") : "none"
+      `Allowed changes: ${changedFields.length ? changedFields.join(", ") : "none"
       }.`,
     ];
 
@@ -227,10 +233,40 @@ If pose does not match, image is INVALID.
         "STRICT MODE: Camera perspective, scale, and lighting must match the background exactly."
       );
     }
+    promptParts.push(`
+[BLOUSE_DESIGN_LOCK — CRITICAL]
+
+The blouse design MUST be copied EXACTLY from the reference image.
+
+LOCK ALL OF THE FOLLOWING:
+- Blouse color
+- Fabric type
+- Embroidery pattern
+- Print / motifs
+- Neckline shape and depth
+- Sleeve length, cut, and embroidery
+- Border thickness and placement
+- Button placement (if any)
+
+ABSOLUTELY FORBIDDEN:
+- Design enhancement
+- Pattern beautification
+- Color correction or shade changes
+- Added embroidery
+- Changed neckline shape
+- Changed sleeve style
+
+This is a PRODUCT REPLICATION task, NOT a redesign task.
+If blouse design differs from reference image, output is INVALID.
+
+[/BLOUSE_DESIGN_LOCK — CRITICAL]
+`);
+
 
     promptParts.push(
       `[HARD_RULES]\n- ${hardRules.join("\n- ")}\n[/HARD_RULES]`
     );
+
 
     /* -------------------- MODEL -------------------- */
     promptParts.push(`
@@ -252,24 +288,70 @@ If pose does not match, image is INVALID.
           [/CAMERA_AND_LENS_REALISM]
           `);
 
-    /* -------------------- POSE -------------------- */
-    promptParts.push(`
-[POSE_AND_FRAMING]
-Pose & activity: ${attrPhrases.pose}
+          if (isBlouseZoomPose) {
+            promptParts.push(`
+          [BLOUSE_ZOOM_FRAMING — HARD OVERRIDE (FRAMING ONLY)]
+          
+          INTENT:
+          - This is a BLOUSE-FOCUSED catalog image
+          - Blouse is the hero product
+          - ALL other user-selected dropdown options MUST still apply
+          
+          FRAMING (OVERRIDE ONLY THIS):
+          - Camera framing: head to just below waist
+          - Face fully visible
+          - Blouse occupies 65–75% of the frame
+          - Natural human proportions
+          - Static catalog pose (no action)
+          
+          WARDROBE CONSTRAINTS:
+          - Model wears blouse + saree ONLY
+          - Saree allowed ONLY below blouse (waist area)
+          - NO pallu on shoulder
+          - NO pallu across chest
+          - NO pallu visible above blouse hem
+          - NO leggings, jeans, pants, skirts
+          - NO mannequin bodies
+          - NO faded, blurred, or artificial lower body
+          
+          DO NOT OVERRIDE ANY OF THESE:
+          - Background (use user-selected background exactly)
+          - Model type / build
+          - Hair style
+          - Expression / age
+          - Accessories / jewellery
+          - Design change presets
+          
+          [/BLOUSE_ZOOM_FRAMING — HARD OVERRIDE]
+          `);
+          
+            promptParts.push(`
+          [SAREE_DRAPE_OVERRIDE — ABSOLUTE RULE]
+          
+          INTENT:
+          - Saree is present ONLY as a waist-wrapped garment
+          - Blouse must remain completely unobstructed
+          
+          DRAPE RULES (NON-NEGOTIABLE):
+          - Saree starts ONLY at natural waist
+          - Saree goes downward ONLY
+          - Upper torso must show ONLY blouse
+          - Blouse neckline, sleeves, embroidery fully visible
+          
+          STRICTLY FORBIDDEN:
+          - Pallu on shoulder
+          - Pallu across torso
+          - Diagonal drape
+          - Traditional saree styling
+          - Any fabric touching shoulders or chest
+          
+          If any pallu appears above the waist, the image is INVALID.
+          
+          [/SAREE_DRAPE_OVERRIDE — ABSOLUTE RULE]
+          `);
+          }
+          
 
-FRAMING RULES:
-- Medium close-up to three-quarter shot
-- Model fills 70–80% of the frame
-- Camera is close enough to clearly show saree fabric texture
-- Front-facing or slight 3/4 angle only
-- Saree design must be clearly readable
-
-ABSOLUTELY FORBIDDEN:
-- Distant shots
-- Tiny model in frame
-- Excessive background visibility
-[/POSE_AND_FRAMING]
-`);
 
     // STRICT mirror-adjustment composition lock
     if (isMirrorPose) {
@@ -293,8 +375,9 @@ STRICTLY FORBIDDEN:
 - Ceiling or roof visibility
 [/MIRROR_ADJUSTMENT_LOCK]
 `);
-if (isKitchenCoffee) {
-  promptParts.push(`
+    }
+    if (isKitchenCoffee) {
+      promptParts.push(`
 [KITCHEN_COFFEE_CATALOG_FRAMING – STRICT]
 - Model standing at kitchen counter holding a coffee or tea mug
 - One hand holding cup near lips or chest, other hand relaxed
@@ -312,10 +395,9 @@ if (isKitchenCoffee) {
 - Output must match premium lifestyle saree catalog photography
 [/KITCHEN_COFFEE_CATALOG_FRAMING – STRICT]
 `);
-}
-}
+    }
     if (isKitchenLaptop) {
-  promptParts.push(`
+      promptParts.push(`
 [KITCHEN_LAPTOP_FRAMING – STRICT]
 - Camera framing: medium shot from waist to head
 - Camera height: chest-level or eye-level
@@ -331,14 +413,14 @@ if (isKitchenCoffee) {
 - Output must resemble a professional lifestyle catalog photograph
 [/KITCHEN_LAPTOP_FRAMING – STRICT]
 `);
-}
+    }
 
-if (isKitchenCooking) {
-  promptParts.push(`
+    if (isKitchenCooking) {
+      promptParts.push(`
 [KITCHEN_COOKING_CATALOG_FRAMING – STRICT]
 - Model standing at kitchen counter cutting vegetables on a chopping board
 - Camera framing: mid-shot (from chest to just below waist)
-- Camera angle: straight-on, slightly downward (5–7 degrees)
+- Camera angle: straight-on, eye-level
 - Both hands clearly visible holding knife and vegetables
 - Saree pleats, waist drape, blouse sleeves, and pallu clearly visible
 - Saree front design must be fully readable and uninterrupted
@@ -352,7 +434,8 @@ if (isKitchenCooking) {
 - Output must match professional saree catalog photography standards
 [/KITCHEN_COOKING_CATALOG_FRAMING – STRICT]
 `);
-}
+    }
+
 
     promptParts.push(`
 [ANTI_WIDE_SHOT_FAILSAFE]
