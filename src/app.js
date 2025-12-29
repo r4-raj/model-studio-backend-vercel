@@ -6,20 +6,20 @@ const app = express();
 
 app.use(
   cors({
-    origin: "*", // Keeping permissive CORS for now, assuming external domain is required
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
-app.use(express.json({ limit: '50mb' })); // Ensure body parser handles large image data
+app.use(express.json({ limit: "50mb" }));
 
 // health check
 app.get("/", (req, res) => {
-  res.send("Model Studio backend is running");
+  res.send("Model Studio backend is running 🚀");
 });
-app.options("*", cors());
 
-// 🚨 FIX HERE: Change the route base path to /api
-// This allows generateRouter to define the POST route at /generate-image
+// API routes
 app.use("/api", generateRouter);
 
 export default app;
