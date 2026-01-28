@@ -619,12 +619,11 @@ const sizeInMB = (jpgBuffer.length / (1024 * 1024)).toFixed(2);
 console.log("Final JPG size:", sizeInMB, "MB");
 
 return res.json({
-  imageBase64: jpgBuffer.toString("base64"),
-  mimeType: "image/jpeg",
-  sizeMB: sizeInMB,
-  promptUsed: promptText,
+  imageBase64,
+  mimeType: "image/png", // Gemini output
   provider: "gemini",
 });
+
 
   } catch (err) {
     console.error("Gemini error:", err);
