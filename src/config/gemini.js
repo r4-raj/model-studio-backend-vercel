@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/genai";
 
 // Load env variables here so this file works even if imports are hoisted
 dotenv.config();
@@ -12,6 +12,6 @@ if (!geminiApiKey) {
   );
 }
 
-export const genAI = new GoogleGenAI({
+export const genAI = new GoogleGenerativeAI({
   apiKey: geminiApiKey,
 });
