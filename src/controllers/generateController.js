@@ -1,4 +1,5 @@
 import { genAI } from "../config/gemini.js";
+import sharp from "sharp";
 
 /**
  * generateImage - with HARD_STRICT_MODE toggle
@@ -600,16 +601,31 @@ This is a saree catalog image, NOT an interior photo.
       return res.status(500).json({ error: "No image returned from Gemini." });
     }
 
-    return res.json({
-      imageBase64,
-      promptUsed: promptText,
-      provider: "gemini",
-      debug: {
-        HARD_STRICT_MODE,
-        isLivingRoom,
-        changedFields,
-      },
-    });
+    /* ---------------- PNG → JPG CONVERSION ---------------- */
+
+const pngBuffer = Buffer.from(imageBase64, "base64");
+
+// High-quality JPG conversion
+const jpgBuffer = await sharp(pngBuffer)
+  .jpeg({
+    quality: 92,          // 🔥 sweet spot (no visible loss)
+    chromaSubsampling: "4:4:4", // keeps saree texture crisp
+    mozjpeg: true,        // better compression
+  })
+  .toBuffer();
+
+// Optional: safety check (debug only)
+const sizeInMB = (jpgBuffer.length / (1024 * 1024)).toFixed(2);
+console.log("Final JPG size:", sizeInMB, "MB");
+
+return res.json({
+  imageBase64: jpgBuffer.toString("base64"),
+  mimeType: "image/jpeg",
+  sizeMB: sizeInMB,
+  promptUsed: promptText,
+  provider: "gemini",
+});
+
   } catch (err) {
     console.error("Gemini error:", err);
     return res
