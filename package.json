@@ -2,9 +2,10 @@
   "name": "model-studio-backend",
   "version": "1.0.0",
   "type": "module",
-  "main": "src/server.js",
+  "main": "api/index.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "build": "echo 'No build step needed'"
   },
   "dependencies": {
     "@google/genai": "^1.0.0",

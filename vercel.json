@@ -6,17 +6,13 @@
       "use": "@vercel/node"
     }
   ],
-  "env": {},
-  "functions": {
-    "api/index.js": {
-      "maxDuration": 60,
-      "memory": 1024
-    }
-  },
   "routes": [
     {
       "src": "/(.*)",
       "dest": "api/index.js"
     }
-  ]
+  ],
+  "env": {
+    "GEMINI_API_KEY": "@gemini_api_key"
+  }
 }
