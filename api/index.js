@@ -1,3 +1,5 @@
 import app from "../src/app.js";
 
-export default app;
+export default (req, res) => {
+  return app(req, res);
+};
