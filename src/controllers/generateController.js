@@ -603,26 +603,53 @@ This is a saree catalog image, NOT an interior photo.
 
     /* ---------------- PNG → JPG CONVERSION ---------------- */
 
+/* ---------------- PNG → JPG CONVERSION (SIZE LOCK 1–2 MB) ---------------- */
+
 const pngBuffer = Buffer.from(imageBase64, "base64");
 
-// High-quality JPG conversion
-const jpgBuffer = await sharp(pngBuffer)
-  .jpeg({
-    quality: 92,          // 🔥 sweet spot (no visible loss)
-    chromaSubsampling: "4:4:4", // keeps saree texture crisp
-    mozjpeg: true,        // better compression
-  })
-  .toBuffer();
+let jpgBuffer = null;
+let quality = 95;
 
-// Optional: safety check (debug only)
-const sizeInMB = (jpgBuffer.length / (1024 * 1024)).toFixed(2);
-console.log("Final JPG size:", sizeInMB, "MB");
+const MIN_SIZE = 1 * 1024 * 1024; // 1 MB
+const MAX_SIZE = 2 * 1024 * 1024; // 2 MB
+
+while (quality >= 80) {
+  jpgBuffer = await sharp(pngBuffer)
+    .jpeg({
+      quality,
+      chromaSubsampling: "4:4:4",
+      mozjpeg: true,
+    })
+    .toBuffer();
+
+  if (jpgBuffer.length >= MIN_SIZE && jpgBuffer.length <= MAX_SIZE) {
+    break;
+  }
+
+  quality -= 3;
+}
+
+// 🔒 Hard fallback: upscale slightly if still too small
+if (jpgBuffer.length < MIN_SIZE) {
+  jpgBuffer = await sharp(jpgBuffer)
+    .resize({ width: 2600, withoutEnlargement: false })
+    .jpeg({
+      quality: 90,
+      chromaSubsampling: "4:4:4",
+      mozjpeg: true,
+    })
+    .toBuffer();
+}
+
+const finalSizeMB = (jpgBuffer.length / (1024 * 1024)).toFixed(2);
+console.log("Final JPG locked size:", finalSizeMB, "MB");
 
 return res.json({
-  imageBase64,
-  mimeType: "image/png", // Gemini output
+  imageBase64: jpgBuffer.toString("base64"),
+  mimeType: "image/jpeg",
   provider: "gemini",
 });
+
 
 
   } catch (err) {
