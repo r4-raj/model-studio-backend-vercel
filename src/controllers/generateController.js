@@ -9,6 +9,7 @@ import sharp from "sharp";
 export const generateImage = async (req, res) => {
   try {
     const HARD_STRICT_MODE = process.env.HARD_STRICT_MODE === "true";
+    const REFERENCE_LOCK = true;
 
     const files = req.files || {};
     const file = files.referenceImage?.[0];
@@ -100,12 +101,22 @@ export const generateImage = async (req, res) => {
     };
 
     const changedFields = Object.keys(attributes).filter(
-      (k) => !k.endsWith("Note") && attributes[k] !== null
+      (k) => !k.endsWith("Note") && attributes[k] !== null,
     );
 
     /* -------------------- Zoom Detection -------------------- */
     const poseText =
       (attributes.pose || "") + " " + (attributes.poseNote || "");
+    if (
+      (poseText.toLowerCase().includes("back") ||
+        poseText.toLowerCase().includes("rear")) &&
+      !secondaryFile
+    ) {
+      return res.status(400).json({
+        error: "Back pose requires SECOND reference image of same saree.",
+      });
+    }
+
     const zoomKeywords = [
       "zoom",
       "close up",
@@ -135,7 +146,7 @@ export const generateImage = async (req, res) => {
     // NEW: Detect Blouse Zoom Pose
 
     const isZoom = zoomKeywords.some((kw) =>
-      poseText.toLowerCase().includes(kw)
+      poseText.toLowerCase().includes(kw),
     );
 
     /* -------------------- Defaults -------------------- */
@@ -155,28 +166,28 @@ export const generateImage = async (req, res) => {
       modelType: mergeChoice(
         attributes.modelType,
         attributes.modelTypeNote,
-        defaults.modelType
+        defaults.modelType,
       ),
       modelExpression: formatExpression(
         attributes.modelExpression,
-        attributes.modelExpressionNote
+        attributes.modelExpressionNote,
       ),
       hair: mergeChoice(attributes.hair, attributes.hairNote, defaults.hair),
       pose: mergeChoice(attributes.pose, attributes.poseNote, defaults.pose),
       location: mergeChoice(
         attributes.location,
         attributes.locationNote,
-        defaults.location
+        defaults.location,
       ),
       accessories: mergeChoice(
         attributes.accessories,
         attributes.accessoriesNote,
-        defaults.accessories
+        defaults.accessories,
       ),
       otherOption: mergeChoice(
         attributes.otherOption,
         attributes.otherOptionNote,
-        defaults.otherOption
+        defaults.otherOption,
       ),
       otherDetails: attributes.otherDetails || "",
     };
@@ -194,10 +205,10 @@ export const generateImage = async (req, res) => {
     /* -------------------- Prompt Assembly -------------------- */
     const promptParts = [];
 
-
     if (HARD_STRICT_MODE) {
       promptParts.push("!!! STRICT MODE ENABLED. FOLLOW ALL RULES EXACTLY.");
     }
+    // 1. POSE_LOCK
     promptParts.push(`
 [POSE_LOCK — CRITICAL]
 - Use the EXACT pose described below
@@ -211,63 +222,113 @@ ${attrPhrases.pose}
 If pose does not match, image is INVALID.
 [/POSE_LOCK]
 `);
-
+    // 2. Photographer description
     promptParts.push(
-      "You are a world-class commercial lifestyle photographer. Create ONE completely photorealistic photograph. The final image must look like a real indoor photograph, never a studio cutout."
+      "You are a world-class commercial lifestyle photographer. Create ONE completely photorealistic photograph. The final image must look like a real indoor photograph, never a studio cutout.",
     );
 
-    /* -------------------- HARD RULES -------------------- */
+    // 3. HARD RULES array is CREATED
     const hardRules = [
-      "FIRST image is the MASTER FRONTAL saree reference. Copy design, border, embroidery, motifs, and colors exactly.",
-      "SECOND image (if provided) is ONLY for back-side saree reference.",
+      "FIRST image is the MASTER REFERENCE. Copy design, border, and colors EXACTLY.",
+      "Do NOT Use creative license to change the fabric pattern.", // <--- ADD THIS
+      "Texture and Print must be identical to the uploaded image.", // <--- ADD THIS
+      "SECOND image (if provided) is the BACK view of the SAME product.",
       "Do NOT add text, logos, watermarks, or extra people.",
       "Do NOT distort anatomy or fabric geometry.",
-      `Allowed changes: ${changedFields.length ? changedFields.join(", ") : "none"
-      }.`,
+      `Allowed changes: ${changedFields.length ? changedFields.join(", ") : "none"}.`,
     ];
-
     if (HARD_STRICT_MODE) {
       hardRules.push(
-        "STRICT MODE: DO NOT change saree pattern, colors, border, or motifs unless explicitly requested."
+        "STRICT MODE: DO NOT change saree pattern, colors, border, or motifs unless explicitly requested.",
       );
       hardRules.push(
-        "STRICT MODE: Camera perspective, scale, and lighting must match the background exactly."
+        "STRICT MODE: Camera perspective, scale, and lighting must match the background exactly.",
       );
     }
-    promptParts.push(`
-[BLOUSE_DESIGN_LOCK — CRITICAL]
-
-The blouse design MUST be copied EXACTLY from the reference image.
-
-LOCK ALL OF THE FOLLOWING:
-- Blouse color
-- Fabric type
-- Embroidery pattern
-- Print / motifs
-- Neckline shape and depth
-- Sleeve length, cut, and embroidery
-- Border thickness and placement
-- Button placement (if any)
-
-ABSOLUTELY FORBIDDEN:
-- Design enhancement
-- Pattern beautification
-- Color correction or shade changes
-- Added embroidery
-- Changed neckline shape
-- Changed sleeve style
-
-This is a PRODUCT REPLICATION task, NOT a redesign task.
-If blouse design differs from reference image, output is INVALID.
-
-[/BLOUSE_DESIGN_LOCK — CRITICAL]
-`);
-
-
     promptParts.push(
-      `[HARD_RULES]\n- ${hardRules.join("\n- ")}\n[/HARD_RULES]`
+      `[HARD_RULES]\n- ${hardRules.join("\n- ")}\n[/HARD_RULES]`,
     );
+    // 4. REFERENCE_LOCK_MODE
+    if (REFERENCE_LOCK) {
+      promptParts.push(`
+[REFERENCE_LOCK_MODE — ABSOLUTE]
 
+This task is NOT image generation.
+This task is IMAGE PRESERVATION.
+
+The FIRST image is the MASTER PRODUCT.
+The saree and blouse are FINAL and READ-ONLY.
+
+STRICT PROHIBITIONS:
+- NO redesign
+- NO reinterpretation
+- NO re-stylization
+- NO pattern regeneration
+- NO color variation
+- NO motif replacement
+- NO border redesign
+- NO blouse redesign
+- NO sleeve or neckline change
+
+ALLOWED CHANGES ONLY:
+- Pose
+- Camera angle
+- Lighting
+- Background
+- Environment
+- Framing
+
+If ANY fabric, color, motif, or blouse detail differs from the reference,
+the output is INVALID.
+
+[/REFERENCE_LOCK_MODE — ABSOLUTE]
+`);
+    }
+
+    // 5. NEGATIVE PROMPT
+    promptParts.push(`
+[NEGATIVE_PROMPT — NEVER DO THESE]
+
+❌ Do NOT generate a new saree
+❌ Do NOT invent back patterns
+❌ Do NOT smooth or simplify prints
+❌ Do NOT replace floral motifs
+❌ Do NOT recolor borders
+❌ Do NOT change blouse fabric
+❌ Do NOT alter blouse neckline
+❌ Do NOT alter sleeve length
+❌ Do NOT add embroidery
+❌ Do NOT modernize design
+❌ Do NOT stylize fabric
+
+If unsure, COPY EXACTLY from reference.
+
+[/NEGATIVE_PROMPT]
+`);
+    // 6. PRODUCT_CLONE_MODE
+    promptParts.push(`
+[PRODUCT_CLONE_MODE — MAXIMUM STRICTNESS]
+YOUR GOAL: You are NOT designing a saree. You are performing DIRECT TEXTURE TRANSFER (pixel-faithful).
+ of the provided reference image onto the model.
+1. EXACT DESIGN TRANSFER:
+   - Every single motif, flower, pattern, and border detail from the Reference Image must appear on the final model.
+   - Do NOT simplify the pattern.
+   - Do NOT "improve" the design.
+   - Do NOT change the colors (maintain the exact hex codes visually).
+2. DUAL VIEW LOGIC (If 2 images are provided):
+   - Image 1 = FRONT of the garment.
+   - Image 2 = BACK of the SAME garment.
+   - You MUST stitch them together mentally.
+   - The fabric texture, border width, and color shade in the BACK view (Image 2) must match the FRONT view (Image 1) perfectly.
+   - Do not hallucinate a different design for the back.
+3. BLOUSE RULES:
+   - The blouse sleeve length, neckline depth, and embroidery must be an EXACT REPLICA of the reference.
+   - If the reference shows a specific embroidery on the sleeve, it MUST appear in the final image.
+FAILURE CONDITION:
+- If the saree pattern looks different from the reference image, the result is FAILED.
+- If the back view does not match the front view's style, the result is FAILED.
+[/PRODUCT_CLONE_MODE — MAXIMUM STRICTNESS]
+`);
 
     /* -------------------- MODEL -------------------- */
     promptParts.push(`
@@ -289,8 +350,8 @@ If blouse design differs from reference image, output is INVALID.
           [/CAMERA_AND_LENS_REALISM]
           `);
 
-          if (isBlouseZoomPose) {
-            promptParts.push(`
+    if (isBlouseZoomPose) {
+      promptParts.push(`
           [BLOUSE_ZOOM_FRAMING — HARD OVERRIDE (FRAMING ONLY)]
           
           INTENT:
@@ -325,8 +386,8 @@ If blouse design differs from reference image, output is INVALID.
           
           [/BLOUSE_ZOOM_FRAMING — HARD OVERRIDE]
           `);
-          
-            promptParts.push(`
+
+      promptParts.push(`
           [SAREE_DRAPE_OVERRIDE — ABSOLUTE RULE]
           
           INTENT:
@@ -350,9 +411,7 @@ If blouse design differs from reference image, output is INVALID.
           
           [/SAREE_DRAPE_OVERRIDE — ABSOLUTE RULE]
           `);
-          }
-          
-
+    }
 
     // STRICT mirror-adjustment composition lock
     if (isMirrorPose) {
@@ -437,7 +496,6 @@ STRICTLY FORBIDDEN:
 `);
     }
 
-
     promptParts.push(`
 [ANTI_WIDE_SHOT_FAILSAFE]
 If the model appears too far from camera, REFRAME closer.
@@ -511,11 +569,17 @@ This is a saree catalog image, NOT an interior photo.
     [/DESIGN_CHANGE]
     `);
 
-    if (base64Image2) {
+    // FIX: Strict consistency prompt for Back View scenarios
+    if (base64Image2 && genMode !== "MODEL_REFERENCE_BASED") {
       promptParts.push(`
-    [SECONDARY_IMAGE_USAGE]
-    Use second image ONLY for reverse/back saree details
-    [/SECONDARY_IMAGE_USAGE]
+    [SECONDARY_IMAGE_USAGE — STRICT CONSISTENCY]
+    - The 2nd image provided is the BACK VIEW of the EXACT SAME saree/blouse shown in the 1st image.
+    - You MUST mentally "stitch" these two images together.
+    - The blouse design, border pattern, and fabric color MUST be identical in front and back.
+    - Do NOT treat the second image as a different product.
+    - Do NOT change the blouse design; copy the details from the reference images exactly.
+    - If the user provides a back view, the final image back details must match it 100%.
+    [/SECONDARY_IMAGE_USAGE — STRICT CONSISTENCY]
     `);
     }
 
@@ -562,16 +626,22 @@ This is a saree catalog image, NOT an interior photo.
 
     /* -------------------- Gemini Call -------------------- */
     const contents = [
-      { inlineData: { mimeType: file.mimetype, data: base64Image } },
+      {
+        inlineData: {
+          mimeType: file.mimetype,
+          data: base64Image,
+        },
+        role: "reference_front",
+      },
     ];
 
-    // NEW: add model reference image second
-    if (genMode === "MODEL_REFERENCE_BASED") {
+    if (base64Image2) {
       contents.push({
         inlineData: {
           mimeType: secondaryFile.mimetype,
           data: base64Image2,
         },
+        role: "reference_back",
       });
     }
 
@@ -601,61 +671,91 @@ This is a saree catalog image, NOT an interior photo.
       return res.status(500).json({ error: "No image returned from Gemini." });
     }
 
-    /* ---------------- PNG → JPG CONVERSION ---------------- */
-
-/* ---------------- PNG → JPG CONVERSION (SIZE LOCK 1–2 MB) ---------------- */
+/* ================= PNG → JPG CONVERSION (HARD 1–2 MB LOCK) ================= */
 
 const pngBuffer = Buffer.from(imageBase64, "base64");
-
-let jpgBuffer = null;
-let quality = 95;
 
 const MIN_SIZE = 1 * 1024 * 1024; // 1 MB
 const MAX_SIZE = 2 * 1024 * 1024; // 2 MB
 
-while (quality >= 80) {
+let jpgBuffer;
+let width = 2600;   // catalog-safe starting width
+let quality = 92;  // high-quality start
+
+for (let i = 0; i < 25; i++) {
   jpgBuffer = await sharp(pngBuffer)
+    .resize({
+      width,
+      withoutEnlargement: false,
+    })
     .jpeg({
       quality,
-      chromaSubsampling: "4:4:4",
       mozjpeg: true,
+      chromaSubsampling: "4:4:4",
     })
     .toBuffer();
 
-  if (jpgBuffer.length >= MIN_SIZE && jpgBuffer.length <= MAX_SIZE) {
+  const size = jpgBuffer.length;
+
+  // ✅ SUCCESS
+  if (size >= MIN_SIZE && size <= MAX_SIZE) {
     break;
   }
 
-  quality -= 3;
+  // 🔼 TOO SMALL → increase resolution first
+  if (size < MIN_SIZE) {
+    width += 200;
+    quality = Math.min(quality + 2, 98);
+  }
+
+  // 🔽 TOO BIG → reduce quality first, then width
+  if (size > MAX_SIZE) {
+    if (quality > 85) {
+      quality -= 4;
+    } else {
+      width -= 200;
+    }
+  }
+
+  // 🛑 HARD SAFETY LIMITS
+  if (quality < 80) quality = 80;
+  if (width < 2000) width = 2000;
 }
 
-// 🔒 Hard fallback: upscale slightly if still too small
-if (jpgBuffer.length < MIN_SIZE) {
-  jpgBuffer = await sharp(jpgBuffer)
-    .resize({ width: 2600, withoutEnlargement: false })
-    .jpeg({
-      quality: 90,
-      chromaSubsampling: "4:4:4",
-      mozjpeg: true,
-    })
-    .toBuffer();
+/* ================= FINAL VALIDATION ================= */
+
+const finalSize = jpgBuffer.length;
+
+if (finalSize < MIN_SIZE || finalSize > MAX_SIZE) {
+  console.error("❌ Image size lock failed", {
+    sizeMB: (finalSize / (1024 * 1024)).toFixed(2),
+    width,
+    quality,
+  });
+
+  return res.status(500).json({
+    error: "Failed to generate image within 1–2 MB size constraints",
+  });
 }
 
-const finalSizeMB = (jpgBuffer.length / (1024 * 1024)).toFixed(2);
-console.log("Final JPG locked size:", finalSizeMB, "MB");
+/* ================= FINAL LOG ================= */
+
+console.log(
+  "✅ Final JPG size:",
+  (finalSize / (1024 * 1024)).toFixed(2),
+  "MB | width:",
+  width,
+  "| quality:",
+  quality
+);
 
 return res.json({
   imageBase64: jpgBuffer.toString("base64"),
   mimeType: "image/jpeg",
   provider: "gemini",
 });
-
-
-
-  } catch (err) {
-    console.error("Gemini error:", err);
-    return res
-      .status(500)
-      .json({ error: err.message || "Something went wrong." });
+  } catch (error) {
+    console.error("Error generating image:", error);
+    return res.status(500).json({ error: "Failed to generate image." });
   }
 };
